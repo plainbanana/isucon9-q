@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	_ "github.com/go-sql-driver/mysql"
@@ -62,10 +63,11 @@ const (
 )
 
 var (
-	templates           *template.Template
-	dbx                 *sqlx.DB
-	store               sessions.Store
-	getCategoryByIDStmt *sqlx.Stmt
+	templates            *template.Template
+	dbx                  *sqlx.DB
+	store                sessions.Store
+	getCategoryByIDStmt  *sqlx.Stmt
+	getCategoryByIDsStmt *sqlx.Stmt
 )
 
 type Config struct {
@@ -327,6 +329,10 @@ func main() {
 	if err != nil {
 		log.Print(err)
 	}
+	getCategoryByIDsStmt, err = dbx.Preparex("SELECT * FROM `categories` WHERE `id` IN (?)")
+	if err != nil {
+		log.Print(err)
+	}
 	dbx.SetMaxOpenConns(1000)
 
 	mux := goji.NewMux()
@@ -419,6 +425,29 @@ func getUserSimpleByID(q sqlx.Queryer, userID int64) (userSimple UserSimple, err
 	return userSimple, err
 }
 
+func getUserSimpleByIDs(q sqlx.Queryer, items []Item) (userSimples []UserSimple, err error) {
+	// user := User{}
+	users := []User{}
+	var tmp []string
+	for _, v := range items {
+		tmp = append(tmp, fmt.Sprint(v.SellerID))
+	}
+	var str string
+	str = strings.Join(tmp, ", ")
+	err = sqlx.Get(q, &users, "SELECT * FROM `users` WHERE `id` IN (?)", str)
+	if err != nil {
+		return userSimples, err
+	}
+	for _, user := range users {
+		var userSimple UserSimple
+		userSimple.ID = user.ID
+		userSimple.AccountName = user.AccountName
+		userSimple.NumSellItems = user.NumSellItems
+		userSimples = append(userSimples, userSimple)
+	}
+	return userSimples, err
+}
+
 func getCategoryByID(q sqlx.Queryer, categoryID int) (category Category, err error) {
 	// err = sqlx.Get(q, &category, "SELECT * FROM `categories` WHERE `id` = ?", categoryID)
 	// log.Println("debug", category, err)
@@ -432,6 +461,30 @@ func getCategoryByID(q sqlx.Queryer, categoryID int) (category Category, err err
 		category.ParentCategoryName = parentCategory.CategoryName
 	}
 	return category, err
+}
+
+func getCategoryByIDs(q sqlx.Queryer, items []Item) (categorys []Category, err error) {
+	// err = sqlx.Get(q, &category, "SELECT * FROM `categories` WHERE `id` = ?", categoryID)
+	// log.Println("debug", category, err)
+	// err = getCategoryByIDStmt.Get(&category, categoryID)
+	var tmp []string
+	for _, v := range items {
+		tmp = append(tmp, fmt.Sprint(v.CategoryID))
+	}
+	var str string
+	str = strings.Join(tmp, ", ")
+	err = getCategoryByIDsStmt.Get(&categorys, str)
+	for _, category := range categorys {
+		if category.ParentID != 0 {
+			parentCategory, err := getCategoryByID(q, category.ParentID)
+			if err != nil {
+				return categorys, err
+			}
+			category.ParentCategoryName = parentCategory.CategoryName
+		}
+	}
+	// log.Println("debug", category, err)
+	return categorys, err
 }
 
 func getConfigByName(name string) (string, error) {
@@ -947,19 +1000,39 @@ func getTransactions(w http.ResponseWriter, r *http.Request) {
 	}
 
 	itemDetails := []ItemDetail{}
-	for _, item := range items {
-		seller, err := getUserSimpleByID(tx, item.SellerID)
-		if err != nil {
-			outputErrorMsg(w, http.StatusNotFound, "seller not found")
-			tx.Rollback()
-			return
-		}
-		category, err := getCategoryByID(tx, item.CategoryID)
-		if err != nil {
-			outputErrorMsg(w, http.StatusNotFound, "category not found")
-			tx.Rollback()
-			return
-		}
+	log.Println("itemsCount: ", len(items))
+	sellers, err := getUserSimpleByIDs(tx, items)
+	if err != nil {
+		log.Println("sellers: ", err)
+		outputErrorMsg(w, http.StatusNotFound, "seller not found")
+		tx.Rollback()
+		return
+	}
+	categorys, err := getCategoryByIDs(tx, items)
+	if err != nil {
+		log.Println("categorys: ", err)
+		outputErrorMsg(w, http.StatusNotFound, "category not found")
+		tx.Rollback()
+		return
+	}
+	// for _, item := range items {
+	// seller, err := getUserSimpleByID(tx, item.SellerID)
+	// if err != nil {
+	// 	outputErrorMsg(w, http.StatusNotFound, "seller not found")
+	// 	tx.Rollback()
+	// 	return
+	// }
+	// category, err := getCategoryByID(tx, item.CategoryID)
+	// if err != nil {
+	// 	outputErrorMsg(w, http.StatusNotFound, "category not found")
+	// 	tx.Rollback()
+	// 	return
+	// }
+	// }
+
+	for i, item := range items {
+		seller := sellers[i]
+		category := categorys[i]
 
 		itemDetail := ItemDetail{
 			ID:       item.ID,
