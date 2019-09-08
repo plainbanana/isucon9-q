@@ -16,8 +16,10 @@ import (
 	"time"
 
 	_ "github.com/go-sql-driver/mysql"
+	"github.com/gocarina/gocsv"
 	"github.com/gorilla/sessions"
 	"github.com/jmoiron/sqlx"
+	"github.com/najeira/measure"
 	goji "goji.io"
 	"goji.io/pat"
 	"golang.org/x/crypto/bcrypt"
@@ -276,6 +278,7 @@ func init() {
 	templates = template.Must(template.ParseFiles(
 		"../public/index.html",
 	))
+	measure.Reset()
 }
 
 func main() {
@@ -354,6 +357,8 @@ func main() {
 	mux.HandleFunc(pat.Get("/transactions/:transaction_id"), getIndex)
 	mux.HandleFunc(pat.Get("/users/:user_id"), getIndex)
 	mux.HandleFunc(pat.Get("/users/setting"), getIndex)
+	// measure
+	mux.HandleFunc(pat.Get("/stats"), getStats)
 	// Assets
 	mux.Handle(pat.Get("/*"), http.FileServer(http.Dir("../public")))
 	log.Fatal(http.ListenAndServe(":8000", mux))
@@ -452,6 +457,14 @@ func getIndex(w http.ResponseWriter, r *http.Request) {
 	templates.ExecuteTemplate(w, "index.html", struct{}{})
 }
 
+func getStats(w http.ResponseWriter, r *http.Request) {
+	stats := measure.GetStats()
+	stats.SortDesc("sum")
+
+	s, _ := gocsv.MarshalString(&stats)
+	fmt.Fprintf(w, "%s", s)
+}
+
 func postInitialize(w http.ResponseWriter, r *http.Request) {
 	ri := reqInitialize{}
 
@@ -503,6 +516,7 @@ func postInitialize(w http.ResponseWriter, r *http.Request) {
 }
 
 func getNewItems(w http.ResponseWriter, r *http.Request) {
+	defer measure.Start("getNewItems").Stop()
 	query := r.URL.Query()
 	itemIDStr := query.Get("item_id")
 	var itemID int64
