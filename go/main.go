@@ -425,27 +425,37 @@ func getUserSimpleByID(q sqlx.Queryer, userID int64) (userSimple UserSimple, err
 	return userSimple, err
 }
 
-func getUserSimpleByIDs(q sqlx.Queryer, items []Item) (userSimples []UserSimple, err error) {
-	// user := User{}
-	users := []User{}
+func getUserSimpleByIDs(q sqlx.Queryer, items []Item) (m map[int64]UserSimple, err error) {
+	m = map[int64]UserSimple{}
 	var tmp []string
 	for _, v := range items {
 		tmp = append(tmp, fmt.Sprint(v.SellerID))
 	}
 	var str string
 	str = strings.Join(tmp, ", ")
-	err = sqlx.Get(q, &users, "SELECT * FROM `users` WHERE `id` IN (?)", str)
-	if err != nil {
-		return userSimples, err
-	}
-	for _, user := range users {
+	// err = sqlx.Get(q, &user, "SELECT * FROM `users` WHERE `id` IN (?)", str)
+	// err = sqlx.Select(q, &users, "SELECT * FROM `users` WHERE `id` IN (?)", str)
+	rows, err := dbx.Queryx("SELECT * FROM `users` WHERE `id` IN (?)", str)
+	for rows.Next() {
+		user := User{}
+		rows.Scan(&user.ID,
+			&user.AccountName,
+			&user.HashedPassword,
+			&user.Address,
+			&user.NumSellItems,
+			&user.LastBump,
+			&user.CreatedAt)
 		var userSimple UserSimple
 		userSimple.ID = user.ID
 		userSimple.AccountName = user.AccountName
 		userSimple.NumSellItems = user.NumSellItems
-		userSimples = append(userSimples, userSimple)
+		// userSimples = append(userSimples, userSimple)
+		m[user.ID] = userSimple
 	}
-	return userSimples, err
+	if err != nil {
+		return m, err
+	}
+	return m, err
 }
 
 func getCategoryByID(q sqlx.Queryer, categoryID int) (category Category, err error) {
@@ -463,28 +473,37 @@ func getCategoryByID(q sqlx.Queryer, categoryID int) (category Category, err err
 	return category, err
 }
 
-func getCategoryByIDs(q sqlx.Queryer, items []Item) (categorys []Category, err error) {
+func getCategoryByIDs(q sqlx.Queryer, items []Item) (m map[int]Category, err error) {
 	// err = sqlx.Get(q, &category, "SELECT * FROM `categories` WHERE `id` = ?", categoryID)
 	// log.Println("debug", category, err)
 	// err = getCategoryByIDStmt.Get(&category, categoryID)
+	m = map[int]Category{}
 	var tmp []string
 	for _, v := range items {
 		tmp = append(tmp, fmt.Sprint(v.CategoryID))
 	}
 	var str string
 	str = strings.Join(tmp, ", ")
-	err = getCategoryByIDsStmt.Get(&categorys, str)
-	for _, category := range categorys {
-		if category.ParentID != 0 {
-			parentCategory, err := getCategoryByID(q, category.ParentID)
+	// err = getCategoryByIDsStmt.Get(&categorys, str)
+	// err = getCategoryByIDsStmt.Select(&categorys, str)
+	rows, err := dbx.Queryx("SELECT * FROM `categories` WHERE `id` IN (?)", str)
+	for rows.Next() {
+		var c Category
+		rows.Scan(&c.ID,
+			&c.ParentID,
+			&c.CategoryName)
+
+		if c.ParentID != 0 {
+			parentCategory, err := getCategoryByID(q, c.ParentID)
 			if err != nil {
-				return categorys, err
+				return m, err
 			}
-			category.ParentCategoryName = parentCategory.CategoryName
+			c.ParentCategoryName = parentCategory.CategoryName
 		}
+		m[c.ID] = c
 	}
 	// log.Println("debug", category, err)
-	return categorys, err
+	return m, err
 }
 
 func getConfigByName(name string) (string, error) {
@@ -1008,6 +1027,7 @@ func getTransactions(w http.ResponseWriter, r *http.Request) {
 		tx.Rollback()
 		return
 	}
+	log.Println("itemsCount: ", len(sellers), sellers)
 	categorys, err := getCategoryByIDs(tx, items)
 	if err != nil {
 		log.Println("categorys: ", err)
@@ -1015,6 +1035,7 @@ func getTransactions(w http.ResponseWriter, r *http.Request) {
 		tx.Rollback()
 		return
 	}
+	log.Println("itemsCount: ", len(categorys), categorys)
 	// for _, item := range items {
 	// seller, err := getUserSimpleByID(tx, item.SellerID)
 	// if err != nil {
@@ -1030,9 +1051,19 @@ func getTransactions(w http.ResponseWriter, r *http.Request) {
 	// }
 	// }
 
-	for i, item := range items {
-		seller := sellers[i]
-		category := categorys[i]
+	for _, item := range items {
+		seller, ok := sellers[item.SellerID]
+		if !ok {
+			outputErrorMsg(w, http.StatusNotFound, "seller not found")
+			tx.Rollback()
+			return
+		}
+		category, ok := categorys[item.CategoryID]
+		if !ok {
+			outputErrorMsg(w, http.StatusNotFound, "category not found")
+			tx.Rollback()
+			return
+		}
 
 		itemDetail := ItemDetail{
 			ID:       item.ID,
