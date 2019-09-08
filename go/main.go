@@ -66,6 +66,7 @@ var (
 	dbx                 *sqlx.DB
 	store               sessions.Store
 	getCategoryByIDStmt *sqlx.Stmt
+	getUserByIDStmt 	*sqlx.Stmt
 )
 
 type Config struct {
@@ -327,6 +328,10 @@ func main() {
 	if err != nil {
 		log.Print(err)
 	}
+	getUserByIDStmt, err = dbx.Preparex("SELECT * FROM `users` WHERE `id` = ?")
+	if err != nil {
+		log.Print(err)
+	}
 	dbx.SetMaxOpenConns(1000)
 
 	mux := goji.NewMux()
@@ -394,8 +399,8 @@ func getUser(r *http.Request) (user User, errCode int, errMsg string) {
 	if !ok {
 		return user, http.StatusNotFound, "no session"
 	}
-
-	err := dbx.Get(&user, "SELECT * FROM `users` WHERE `id` = ?", userID)
+	err := getUserByIDStmt.Get(&user, userID)
+	// err := dbx.Get(&user, "SELECT * FROM `users` WHERE `id` = ?", userID)
 	if err == sql.ErrNoRows {
 		return user, http.StatusNotFound, "user not found"
 	}
@@ -409,7 +414,8 @@ func getUser(r *http.Request) (user User, errCode int, errMsg string) {
 
 func getUserSimpleByID(q sqlx.Queryer, userID int64) (userSimple UserSimple, err error) {
 	user := User{}
-	err = sqlx.Get(q, &user, "SELECT * FROM `users` WHERE `id` = ?", userID)
+	err = getUserByIDStmt.Get(&user, userID)
+	// err = sqlx.Get(q, &user, "SELECT * FROM `users` WHERE `id` = ?", userID)
 	if err != nil {
 		return userSimple, err
 	}
