@@ -62,9 +62,10 @@ const (
 )
 
 var (
-	templates *template.Template
-	dbx       *sqlx.DB
-	store     sessions.Store
+	templates           *template.Template
+	dbx                 *sqlx.DB
+	store               sessions.Store
+	getCategoryByIDStmt *sqlx.Stmt
 )
 
 type Config struct {
@@ -414,6 +415,7 @@ func getUserSimpleByID(q sqlx.Queryer, userID int64) (userSimple UserSimple, err
 
 func getCategoryByID(q sqlx.Queryer, categoryID int) (category Category, err error) {
 	err = sqlx.Get(q, &category, "SELECT * FROM `categories` WHERE `id` = ?", categoryID)
+	/// err = getCategoryByIDStmt.Get(&category, categoryID)
 	if category.ParentID != 0 {
 		parentCategory, err := getCategoryByID(q, category.ParentID)
 		if err != nil {
@@ -466,6 +468,8 @@ func getStats(w http.ResponseWriter, r *http.Request) {
 }
 
 func postInitialize(w http.ResponseWriter, r *http.Request) {
+	defer measure.Start("postInitialize").Stop()
+
 	ri := reqInitialize{}
 
 	err := json.NewDecoder(r.Body).Decode(&ri)
@@ -502,6 +506,11 @@ func postInitialize(w http.ResponseWriter, r *http.Request) {
 		log.Print(err)
 		outputErrorMsg(w, http.StatusInternalServerError, "db error")
 		return
+	}
+
+	getCategoryByIDStmt, err = dbx.Preparex("SELECT * FROM `categories` WHERE `id` = ?")
+	if err != nil {
+		log.Print(err)
 	}
 
 	res := resInitialize{
