@@ -329,7 +329,7 @@ func main() {
 	if err != nil {
 		log.Print(err)
 	}
-	getCategoryByIDsStmt, err = dbx.Preparex("SELECT * FROM `categories` WHERE `id` IN (?)")
+	getCategoryByIDsStmt, err = dbx.Preparex("SELECT * FROM `categories` WHERE `id` IN  (?)")
 	if err != nil {
 		log.Print(err)
 	}
@@ -435,7 +435,8 @@ func getUserSimpleByIDs(q sqlx.Queryer, items []Item) (m map[int64]UserSimple, e
 	str = strings.Join(tmp, ", ")
 	// err = sqlx.Get(q, &user, "SELECT * FROM `users` WHERE `id` IN (?)", str)
 	// err = sqlx.Select(q, &users, "SELECT * FROM `users` WHERE `id` IN (?)", str)
-	rows, err := dbx.Queryx("SELECT * FROM `users` WHERE `id` IN (?)", str)
+	log.Println("print string", str)
+	rows, err := dbx.Queryx("SELECT * FROM `users` WHERE `id` IN  (" + str + ")")
 	for rows.Next() {
 		user := User{}
 		rows.Scan(&user.ID,
@@ -486,10 +487,11 @@ func getCategoryByIDs(q sqlx.Queryer, items []Item) (m map[int]Category, err err
 	str = strings.Join(tmp, ", ")
 	// err = getCategoryByIDsStmt.Get(&categorys, str)
 	// err = getCategoryByIDsStmt.Select(&categorys, str)
-	rows, err := dbx.Queryx("SELECT * FROM `categories` WHERE `id` IN (?)", str)
+	log.Println("print string", str)
+	rows, err := dbx.Queryx("SELECT * FROM `categories` WHERE `id` IN (" + str + ")")
 	for rows.Next() {
 		var c Category
-		rows.Scan(&c.ID,
+		err = rows.Scan(&c.ID,
 			&c.ParentID,
 			&c.CategoryName)
 
