@@ -323,6 +323,11 @@ func main() {
 	}
 	defer dbx.Close()
 
+	getCategoryByIDStmt, err = dbx.Preparex("SELECT * FROM `categories` WHERE `id` = ?")
+	if err != nil {
+		log.Print(err)
+	}
+
 	mux := goji.NewMux()
 
 	// API
@@ -414,8 +419,10 @@ func getUserSimpleByID(q sqlx.Queryer, userID int64) (userSimple UserSimple, err
 }
 
 func getCategoryByID(q sqlx.Queryer, categoryID int) (category Category, err error) {
-	err = sqlx.Get(q, &category, "SELECT * FROM `categories` WHERE `id` = ?", categoryID)
-	/// err = getCategoryByIDStmt.Get(&category, categoryID)
+	// err = sqlx.Get(q, &category, "SELECT * FROM `categories` WHERE `id` = ?", categoryID)
+	// log.Println("debug", category, err)
+	err = getCategoryByIDStmt.Get(&category, categoryID)
+	log.Println("debug", category, err)
 	if category.ParentID != 0 {
 		parentCategory, err := getCategoryByID(q, category.ParentID)
 		if err != nil {
@@ -506,11 +513,6 @@ func postInitialize(w http.ResponseWriter, r *http.Request) {
 		log.Print(err)
 		outputErrorMsg(w, http.StatusInternalServerError, "db error")
 		return
-	}
-
-	getCategoryByIDStmt, err = dbx.Preparex("SELECT * FROM `categories` WHERE `id` = ?")
-	if err != nil {
-		log.Print(err)
 	}
 
 	res := resInitialize{
